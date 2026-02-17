@@ -42,16 +42,26 @@ Structure du projet
 
 DicomViewer/
 │
-├── CMakeLists.txt
+├── external/
+├── shaders/
 ├── src/
-│   ├── main.cpp
-│   ├── MainWindow.h / .cpp
-│   ├── DicomLoader.h / .cpp
-│   ├── GLViewer.h / .cpp
+│   ├── app/
+│   ├── core/
+│   ├── data/
+│   ├── io/
+│   ├── platform/
+│   │   ├── mainwindow.h
+│   │   └── mainwindow.cpp
+│   ├── render/
+│   ├── scene/
+│   ├── ui/
+│   │   └── mainwindow.ui
+│   ├── utils/
+│   └── main.cpp
 │
-├── resources/
-├── docs/
-│   └── Doxyfile
+├── CMakeLists.txt
+├── Doxyfile
+├── LICENSE
 └── README.md
 
 ---
@@ -129,7 +139,7 @@ Capture d'écran
 
 Licence 
 
-Projet sous licence MIT (modifiable selon vos besoins)
+Projet sous licence MIT
 
 ---
 
