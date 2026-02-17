@@ -30,10 +30,14 @@ endif()
 
 set(PROJECT_SOURCES
         src/main.cpp
-        src/mainwindow.cpp
-        src/mainwindow.h
-        src/mainwindow.ui
+        src/platform/mainwindow.cpp src/platform/mainwindow.h
+        src/ui/mainwindow.ui
 )
+
+set(CMAKE_AUTOUIC_SEARCH_PATHS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/ui
+)
+
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
     qt_add_executable(DicomViewer
@@ -79,6 +83,10 @@ install(TARGETS DicomViewer
     BUNDLE DESTINATION .
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+target_include_directories(DicomViewer PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 if(QT_VERSION_MAJOR EQUAL 6)
