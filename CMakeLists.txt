@@ -10,8 +10,9 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets OpenGL OpenGLWidgets)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets OpenGL OpenGLWidgets)
+find_package(DCMTK REQUIRED)
 
 # ajout Doxygen
 find_package(Doxygen)
@@ -62,7 +63,17 @@ else()
     endif()
 endif()
 
-target_link_libraries(DicomViewer PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+target_link_libraries(DicomViewer PRIVATE
+    Qt${QT_VERSION_MAJOR}::Widgets
+    Qt${QT_VERSION_MAJOR}::OpenGL
+    Qt${QT_VERSION_MAJOR}::OpenGLWidgets
+
+    # de préférence n'ajouter que les modules dont on a besoin
+    #DCMTK::dcmdata
+    #DCMTK::dcmingle
+    #DCMTK::dcmimage
+
+    ${DCMTK_LIBRARIES})
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
 # If you are developing for iOS or macOS you should consider setting an
@@ -85,8 +96,11 @@ install(TARGETS DicomViewer
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
+# Includes directories
 target_include_directories(DicomViewer PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/external
+    ${DCMTK_INCLUDE_DIRS}
 )
 
 if(QT_VERSION_MAJOR EQUAL 6)
