@@ -10,6 +10,22 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+include(FetchContent)
+
+# Download GoogleTest
+FetchContent_Declare(
+  googletest
+  URL https://github.com/google/googletest/archive/refs/heads/main.zip
+)
+
+
+# Prevent overriding the parent project's compiler/linker settings
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+
+FetchContent_MakeAvailable(googletest)
+
+enable_testing()
+
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets OpenGL OpenGLWidgets)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets OpenGL OpenGLWidgets)
 find_package(DCMTK REQUIRED)
@@ -106,3 +122,26 @@ target_include_directories(DicomViewer PRIVATE
 if(QT_VERSION_MAJOR EQUAL 6)
     qt_finalize_executable(DicomViewer)
 endif()
+
+# =========================
+# Tests
+# =========================
+
+add_executable(DicomViewerTests
+    test/test.cpp
+)
+
+target_link_libraries(DicomViewerTests
+    PRIVATE
+    gtest_main
+    Qt${QT_VERSION_MAJOR}::Widgets
+    ${DCMTK_LIBRARIES}
+)
+
+target_include_directories(DicomViewerTests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${DCMTK_INCLUDE_DIRS}
+)
+
+include(GoogleTest)
+gtest_discover_tests(DicomViewerTests)
