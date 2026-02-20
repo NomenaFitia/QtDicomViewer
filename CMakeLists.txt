@@ -60,6 +60,8 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
     qt_add_executable(DicomViewer
         MANUAL_FINALIZATION
         ${PROJECT_SOURCES}
+        src/io/dicomloader.h src/io/dicomloader.cpp
+        test/DICOMLoader_test.cpp
     )
 # Define target properties for Android with Qt 6 as:
 #    set_property(TARGET DicomViewer APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
