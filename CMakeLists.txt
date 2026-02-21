@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.24)
 #qt version 6.10
 
 project(DicomViewer VERSION 0.1 LANGUAGES CXX)
@@ -29,6 +29,7 @@ enable_testing()
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets OpenGL OpenGLWidgets)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets OpenGL OpenGLWidgets)
 find_package(DCMTK REQUIRED)
+find_package(glm REQUIRED)
 
 # ajout Doxygen
 find_package(Doxygen)
@@ -60,8 +61,12 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
     qt_add_executable(DicomViewer
         MANUAL_FINALIZATION
         ${PROJECT_SOURCES}
+
         src/io/dicomloader.h src/io/dicomloader.cpp
         test/DICOMLoader_test.cpp
+        src/data/slice.h src/data/slice.cpp
+        src/data/meshdata.h
+
     )
 # Define target properties for Android with Qt 6 as:
 #    set_property(TARGET DicomViewer APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
@@ -91,7 +96,13 @@ target_link_libraries(DicomViewer PRIVATE
     #DCMTK::dcmingle
     #DCMTK::dcmimage
 
-    ${DCMTK_LIBRARIES})
+    ${DCMTK_LIBRARIES}
+
+    #GLM
+    glm::glm
+
+)
+
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
 # If you are developing for iOS or macOS you should consider setting an
