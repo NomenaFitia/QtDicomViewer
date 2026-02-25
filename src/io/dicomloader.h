@@ -3,7 +3,7 @@
 
 // Documentation TODO
 
-#include <data/volume.h>
+#include "../data/volume.h"
 #include <string>
 
 class DICOMLoader

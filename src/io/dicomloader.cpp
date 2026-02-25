@@ -1,14 +1,13 @@
-#include "dicomloader.h"
+// Documentation and Refactor TODO
 
-// Documentation TODO
+#include "dicomloader.h"
 
 #include <dcmtk/dcmdata/dctk.h>
 #include <dcmtk/dcmdata/dcdeftag.h>
 #include <dcmtk/dcmimgle/dcmimage.h>
-// #include <dcmtk/dcmjpeg/djdecode.h>
-// #include <dcmtk/dcmdata/dcrledrg.h>
 
-#include "utils/MathUtils.h"
+#include "../utils/MathUtils.h"
+
 #include <filesystem>
 #include <algorithm>
 #include <stdexcept>
@@ -17,197 +16,364 @@
 namespace fs = std::filesystem;
 using namespace math;
 
+// ============================================================
 // Helpers
-static inline void parseDoubles(const OFString& s, OFVector<double>& out) {
-    out.clear(); std::string t(s.c_str()); size_t start = 0;
-    while (start < t.size()) {
-        size_t pos = t.find('\\', start);
-        auto tok = t.substr(start, (pos == std::string::npos) ? std::string::npos : pos - start);
-        auto b = tok.find_first_not_of(" \t\r\n"), e = tok.find_last_not_of(" \t\r\n");
-        if (b != std::string::npos) out.push_back(std::stod(tok.substr(b, e - b + 1)));
-        if (pos == std::string::npos) break; start = pos + 1;
+// ============================================================
+
+static void parseDoubleValues(const OFString& dicomString, OFVector<double>& outputValues)
+{
+    outputValues.clear();
+
+    std::string valueString(dicomString.c_str());
+    size_t startPos = 0;
+
+    while (startPos < valueString.size())
+    {
+        size_t separatorPos = valueString.find('\\', startPos);
+
+        std::string token = valueString.substr(
+            startPos,
+            (separatorPos == std::string::npos)
+                ? std::string::npos
+                : separatorPos - startPos
+            );
+
+        size_t begin = token.find_first_not_of(" \t\r\n");
+        size_t end   = token.find_last_not_of(" \t\r\n");
+
+        if (begin != std::string::npos)
+            outputValues.push_back(std::stod(token.substr(begin, end - begin + 1)));
+
+        if (separatorPos == std::string::npos)
+            break;
+
+        startPos = separatorPos + 1;
     }
 }
 
-struct SliceMeta {
-    std::string path;
-    OFVector<double> ipp;
-    double key = 0.0;
-    int    inst = 0;
-    // par-slice
-    double slope = 1.0;
-    double intercept = 0.0;
-    uint16_t bitsAllocated = 16;
-    uint16_t pixelRep = 0; // 0=unsigned, 1=signed
+// ============================================================
+// Structure interne représentant un slice DICOM
+// ============================================================
+
+struct SliceMetadata
+{
+    std::string filePath;
+
+    OFVector<double> imagePositionPatient;
+
+    double slicePositionProjection = 0.0;
+    int    instanceNumber = 0;
+
+    double rescaleSlope     = 1.0;
+    double rescaleIntercept = 0.0;
+
+    uint16_t bitsAllocated       = 16;
+    uint16_t pixelRepresentation = 0; // 0 = unsigned, 1 = signed
 };
+
+// ============================================================
+// Chargement volume DICOM
+// ============================================================
 
 HUVolume DICOMLoader::loadFromDirectory(const std::string& directoryPath)
 {
+    // --------------------------------------------------------
+    // 1) Recherche des fichiers DICOM
+    // --------------------------------------------------------
 
-    std::vector<std::string> files;
-    for (const auto& e : fs::directory_iterator(directoryPath)) {
-        if (!e.is_regular_file()) continue;
-        auto ext = e.path().extension().string();
-        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return (char)std::tolower(c); });
-        if (ext == ".dcm") files.push_back(e.path().string());
-    }
-    if (files.empty()) throw std::runtime_error("Aucun DICOM dans: " + directoryPath);
+    std::vector<std::string> dicomFilePaths;
 
-    OFVector<double> refIOP, refIPP;
-    uint16_t rows = 0, cols = 0;
-    double pxRow = 1.0, pxCol = 1.0;
-
-    std::vector<SliceMeta> slices; slices.reserve(files.size());
-    std::string seriesUID;
-
-    for (const auto& f : files) {
-        DcmFileFormat ff; if (ff.loadFile(f.c_str()).bad()) continue;
-        DcmDataset* ds = ff.getDataset(); if (!ds) continue;
-
-        Uint16 R = 0, C = 0;
-        if (ds->findAndGetUint16(DCM_Rows, R).bad() || ds->findAndGetUint16(DCM_Columns, C).bad())
+    for (const auto& entry : fs::directory_iterator(directoryPath))
+    {
+        if (!entry.is_regular_file())
             continue;
 
-        OFString sUID;
-        if (ds->findAndGetOFString(DCM_SeriesInstanceUID, sUID).good()) {
-            if (seriesUID.empty()) seriesUID = sUID.c_str();
-            else if (seriesUID != sUID.c_str()) continue; // ignorer autres s�ries
-        }
+        std::string extension = entry.path().extension().string();
 
-        OFString iopS, ippS;
-        if (ds->findAndGetOFStringArray(DCM_ImageOrientationPatient, iopS).bad()) continue;
-        if (ds->findAndGetOFStringArray(DCM_ImagePositionPatient, ippS).bad()) continue;
-        OFVector<double> iop, ipp; parseDoubles(iopS, iop); parseDoubles(ippS, ipp);
-        if (iop.size() != 6 || ipp.size() != 3) continue;
+        std::transform(extension.begin(), extension.end(), extension.begin(),
+                       [](unsigned char c)
+                       {
+                           return static_cast<char>(std::tolower(c));
+                       });
 
-        OFString psS;
-        if (ds->findAndGetOFStringArray(DCM_PixelSpacing, psS).good()) {
-            OFVector<double> ps; parseDoubles(psS, ps); if (ps.size() >= 2) { pxRow = ps[0]; pxCol = ps[1]; }
-        }
-
-        double slope = 1.0, intercept = 0.0;
-        ds->findAndGetFloat64(DCM_RescaleSlope, slope);
-        ds->findAndGetFloat64(DCM_RescaleIntercept, intercept);
-
-        Uint16 rep = 0, ba = 16;
-        ds->findAndGetUint16(DCM_PixelRepresentation, rep); // 0=unsigned, 1=signed
-        ds->findAndGetUint16(DCM_BitsAllocated, ba);
-
-        //if (refIOP.empty()) { refIOP = iop; refIPP = ipp; rows = R; cols = C; }
-
-        Sint32 inst = 0; ds->findAndGetSint32(DCM_InstanceNumber, inst);
-        glm::vec3 r{ (float)iop[0],(float)iop[1],(float)iop[2] }, c{ (float)iop[3],(float)iop[4],(float)iop[5] };
-        glm::vec3 n = normalize(cross(r, c));
-        glm::vec3 d{ (float)(ipp[0] - refIPP[0]), (float)(ipp[1] - refIPP[1]), (float)(ipp[2] - refIPP[2]) };
-        double key = d.x * n.x + d.y * n.y + d.z * n.z;
-
-        slices.push_back(SliceMeta{ f, ipp, key, (int)inst, slope, intercept, ba, rep });
+        if (extension == ".dcm")
+            dicomFilePaths.push_back(entry.path().string());
     }
-    if (slices.empty()) throw std::runtime_error("Aucun slice DICOM exploitable.");
 
-    std::stable_sort(slices.begin(), slices.end(), [](const SliceMeta& a, const SliceMeta& b) {
-        if (a.key == b.key) return a.inst < b.inst; return a.key < b.key;
-    });
+    if (dicomFilePaths.empty())
+        throw std::runtime_error("Aucun fichier DICOM dans : " + directoryPath);
 
-    DicomImage firstImg(slices.front().path.c_str());
-    if (firstImg.getStatus() != EIS_Normal || !firstImg.isMonochrome())
-        throw std::runtime_error("1ere image illisible ou non monochrome: " + slices.front().path);
-    const uint32_t width = firstImg.getWidth();
-    const uint32_t height = firstImg.getHeight();
-    const uint32_t depth = (uint32_t)slices.size();
-    if (!width || !height || !depth) throw std::runtime_error("Dimensions nulles.");
+    // --------------------------------------------------------
+    // 2) Lecture des métadonnées
+    // --------------------------------------------------------
 
-    HUVolume vol;
-    vol.width = width; vol.height = height; vol.depth = depth;
-    vol.spacing = { (float)pxCol, (float)pxRow, 1.f };
-    vol.origin = { (float)refIPP[0], (float)refIPP[1], (float)refIPP[2] };
+    OFVector<double> referenceImageOrientation;
+    OFVector<double> referenceImagePosition;
+
+    uint16_t referenceRows    = 0;
+    uint16_t referenceColumns = 0;
+
+    double pixelSpacingRow    = 1.0;
+    double pixelSpacingColumn = 1.0;
+
+    std::string referenceSeriesUID;
+
+    std::vector<SliceMetadata> slices;
+    slices.reserve(dicomFilePaths.size());
+
+    for (const std::string& filePath : dicomFilePaths)
     {
-        glm::vec3 r{ (float)refIOP[0], (float)refIOP[1], (float)refIOP[2] };
-        glm::vec3 c{ (float)refIOP[3], (float)refIOP[4], (float)refIOP[5] };
-        glm::vec3 n = normalize(cross(r, c));
-        setDirection(vol.direction, r, c, n);
-        if (slices.size() >= 2) {
-            std::vector<double> gaps; gaps.reserve(slices.size() - 1);
-            for (size_t i = 1; i < slices.size(); ++i) {
-                glm::vec3 d{ (float)(slices[i].ipp[0] - slices[i - 1].ipp[0]),
-                        (float)(slices[i].ipp[1] - slices[i - 1].ipp[1]),
-                        (float)(slices[i].ipp[2] - slices[i - 1].ipp[2]) };
-                gaps.push_back(std::abs(d.x * n.x + d.y * n.y + d.z * n.z));
+        DcmFileFormat fileFormat;
+
+        if (fileFormat.loadFile(filePath.c_str()).bad())
+            continue;
+
+        DcmDataset* dataset = fileFormat.getDataset();
+        if (!dataset)
+            continue;
+
+        Uint16 rows = 0;
+        Uint16 columns = 0;
+
+        if (dataset->findAndGetUint16(DCM_Rows, rows).bad() ||
+            dataset->findAndGetUint16(DCM_Columns, columns).bad())
+            continue;
+
+        // Vérification de la série
+        OFString seriesUID;
+        if (dataset->findAndGetOFString(DCM_SeriesInstanceUID, seriesUID).good())
+        {
+            if (referenceSeriesUID.empty())
+                referenceSeriesUID = seriesUID.c_str();
+            else if (referenceSeriesUID != seriesUID.c_str())
+                continue;
+        }
+
+        // Orientation et position
+        OFString orientationString;
+        OFString positionString;
+
+        if (dataset->findAndGetOFStringArray(DCM_ImageOrientationPatient, orientationString).bad())
+            continue;
+
+        if (dataset->findAndGetOFStringArray(DCM_ImagePositionPatient, positionString).bad())
+            continue;
+
+        OFVector<double> imageOrientation;
+        OFVector<double> imagePosition;
+
+        parseDoubleValues(orientationString, imageOrientation);
+        parseDoubleValues(positionString, imagePosition);
+
+        if (imageOrientation.size() != 6 || imagePosition.size() != 3)
+            continue;
+
+        // Pixel Spacing
+        OFString pixelSpacingString;
+        if (dataset->findAndGetOFStringArray(DCM_PixelSpacing, pixelSpacingString).good())
+        {
+            OFVector<double> spacingValues;
+            parseDoubleValues(pixelSpacingString, spacingValues);
+
+            if (spacingValues.size() >= 2)
+            {
+                pixelSpacingRow    = spacingValues[0];
+                pixelSpacingColumn = spacingValues[1];
             }
-            auto mid = gaps.begin() + gaps.size() / 2;
-            std::nth_element(gaps.begin(), mid, gaps.end());
-            vol.spacing.z = (float)(*mid > 0 ? *mid : 1.0);
+        }
+
+        double rescaleSlope = 1.0;
+        double rescaleIntercept = 0.0;
+
+        dataset->findAndGetFloat64(DCM_RescaleSlope, rescaleSlope);
+        dataset->findAndGetFloat64(DCM_RescaleIntercept, rescaleIntercept);
+
+        Uint16 pixelRepresentation = 0;
+        Uint16 bitsAllocated = 16;
+
+        dataset->findAndGetUint16(DCM_PixelRepresentation, pixelRepresentation);
+        dataset->findAndGetUint16(DCM_BitsAllocated, bitsAllocated);
+
+        if (referenceImageOrientation.empty())
+        {
+            referenceImageOrientation = imageOrientation;
+            referenceImagePosition    = imagePosition;
+            referenceRows             = rows;
+            referenceColumns          = columns;
+        }
+
+        Sint32 instanceNumber = 0;
+        dataset->findAndGetSint32(DCM_InstanceNumber, instanceNumber);
+
+        // Calcul projection sur la normale du slice
+        glm::vec3 rowDirection{
+            (float)imageOrientation[0],
+            (float)imageOrientation[1],
+            (float)imageOrientation[2]
+        };
+
+        glm::vec3 columnDirection{
+            (float)imageOrientation[3],
+            (float)imageOrientation[4],
+            (float)imageOrientation[5]
+        };
+
+        glm::vec3 sliceNormal = normalize(cross(rowDirection, columnDirection));
+
+        glm::vec3 deltaPosition{
+            (float)(imagePosition[0] - referenceImagePosition[0]),
+            (float)(imagePosition[1] - referenceImagePosition[1]),
+            (float)(imagePosition[2] - referenceImagePosition[2])
+        };
+
+        double sliceProjection =
+            deltaPosition.x * sliceNormal.x +
+            deltaPosition.y * sliceNormal.y +
+            deltaPosition.z * sliceNormal.z;
+
+        slices.push_back({
+            filePath,
+            imagePosition,
+            sliceProjection,
+            (int)instanceNumber,
+            rescaleSlope,
+            rescaleIntercept,
+            bitsAllocated,
+            pixelRepresentation
+        });
+    }
+
+    if (slices.empty())
+        throw std::runtime_error("Aucun slice DICOM exploitable.");
+
+    // --------------------------------------------------------
+    // 3) Tri des slices
+    // --------------------------------------------------------
+
+    std::stable_sort(slices.begin(), slices.end(),
+                     [](const SliceMetadata& a, const SliceMetadata& b)
+                     {
+                         if (a.slicePositionProjection == b.slicePositionProjection)
+                             return a.instanceNumber < b.instanceNumber;
+
+                         return a.slicePositionProjection < b.slicePositionProjection;
+                     });
+
+    // --------------------------------------------------------
+    // 4) Construction du volume
+    // --------------------------------------------------------
+
+    DicomImage firstImage(slices.front().filePath.c_str());
+
+    if (firstImage.getStatus() != EIS_Normal || !firstImage.isMonochrome())
+        throw std::runtime_error("Première image illisible ou non monochrome.");
+
+    const uint32_t volumeWidth  = firstImage.getWidth();
+    const uint32_t volumeHeight = firstImage.getHeight();
+    const uint32_t volumeDepth  = (uint32_t)slices.size();
+
+    if (!volumeWidth || !volumeHeight || !volumeDepth)
+        throw std::runtime_error("Dimensions invalides.");
+
+    HUVolume volume;
+
+    volume.width  = volumeWidth;
+    volume.height = volumeHeight;
+    volume.depth  = volumeDepth;
+
+    volume.spacing = {
+        (float)pixelSpacingColumn,
+        (float)pixelSpacingRow,
+        1.0f
+    };
+
+    volume.origin = {
+        (float)referenceImagePosition[0],
+        (float)referenceImagePosition[1],
+        (float)referenceImagePosition[2]
+    };
+
+    volume.voxels.resize((size_t)volumeWidth * volumeHeight * volumeDepth);
+
+    // --------------------------------------------------------
+    // 5) Lecture PixelData
+    // --------------------------------------------------------
+
+    const size_t pixelsPerSlice = (size_t)volumeWidth * volumeHeight;
+
+    for (size_t sliceIndex = 0; sliceIndex < slices.size(); ++sliceIndex)
+    {
+        DcmFileFormat fileFormat;
+
+        if (fileFormat.loadFile(slices[sliceIndex].filePath.c_str()).bad())
+            throw std::runtime_error("Échec lecture : " + slices[sliceIndex].filePath);
+
+        DcmDataset* dataset = fileFormat.getDataset();
+        if (!dataset)
+            throw std::runtime_error("Dataset nul : " + slices[sliceIndex].filePath);
+
+        DcmElement* pixelDataElement = nullptr;
+
+        if (dataset->findAndGetElement(DCM_PixelData, pixelDataElement).bad() ||
+            !pixelDataElement)
+            throw std::runtime_error("PixelData manquant : " + slices[sliceIndex].filePath);
+
+        float* destination =
+            volume.voxels.data() + sliceIndex * pixelsPerSlice;
+
+        const double slope     = slices[sliceIndex].rescaleSlope;
+        const double intercept = slices[sliceIndex].rescaleIntercept;
+
+        const bool isSigned =
+            (slices[sliceIndex].pixelRepresentation != 0);
+
+        if (slices[sliceIndex].bitsAllocated <= 8)
+        {
+            Uint8* pixelData8 = nullptr;
+
+            if (pixelDataElement->getUint8Array(pixelData8).bad() || !pixelData8)
+                throw std::runtime_error("Pixels 8 bits indisponibles.");
+
+            if (isSigned)
+            {
+                const int8_t* signedData =
+                    reinterpret_cast<const int8_t*>(pixelData8);
+
+                for (size_t i = 0; i < pixelsPerSlice; ++i)
+                    destination[i] =
+                        float(double(signedData[i]) * slope + intercept);
+            }
+            else
+            {
+                for (size_t i = 0; i < pixelsPerSlice; ++i)
+                    destination[i] =
+                        float(double(pixelData8[i]) * slope + intercept);
+            }
+        }
+        else
+        {
+            Uint16* pixelData16 = nullptr;
+
+            if (pixelDataElement->getUint16Array(pixelData16).bad() || !pixelData16)
+                throw std::runtime_error("Pixels 16 bits indisponibles.");
+
+            if (isSigned)
+            {
+                const int16_t* signedData =
+                    reinterpret_cast<const int16_t*>(pixelData16);
+
+                for (size_t i = 0; i < pixelsPerSlice; ++i)
+                    destination[i] =
+                        float(double(signedData[i]) * slope + intercept);
+            }
+            else
+            {
+                for (size_t i = 0; i < pixelsPerSlice; ++i)
+                    destination[i] =
+                        float(double(pixelData16[i]) * slope + intercept);
+            }
         }
     }
 
-    vol.voxels.resize((size_t)width * height * depth);
-    const size_t sliceCount = (size_t)width * height;
-
-    for (size_t z = 0; z < slices.size(); ++z) {
-        DcmFileFormat ff;
-        if (ff.loadFile(slices[z].path.c_str()).bad())
-            throw std::runtime_error("Echec lecture: " + slices[z].path);
-        DcmDataset* ds = ff.getDataset();
-        if (!ds) throw std::runtime_error("Dataset nul: " + slices[z].path);
-
-        Uint16 R = 0, C = 0;
-        if (ds->findAndGetUint16(DCM_Rows, R).bad() || ds->findAndGetUint16(DCM_Columns, C).bad())
-            throw std::runtime_error("Rows/Cols manquants: " + slices[z].path);
-        if (R != height || C != width)
-            throw std::runtime_error("Incoh�rence Rows/Cols: " + slices[z].path);
-
-        const double slope = slices[z].slope;
-        const double intercept = slices[z].intercept;
-        const bool   isSigned = (slices[z].pixelRep != 0);
-
-        DcmElement* el = nullptr;
-        if (ds->findAndGetElement(DCM_PixelData, el).bad() || !el)
-            throw std::runtime_error("PixelData manquant: " + slices[z].path);
-
-        float* dst = vol.voxels.data() + z * sliceCount;
-
-        if (slices[z].bitsAllocated <= 8) {
-            // ---- 8 bits ----
-            Uint8* p8 = nullptr;                             // <-- SANS const
-            if (el->getUint8Array(p8).bad() || !p8)
-                throw std::runtime_error("Pixels 8b indisponibles: " + slices[z].path);
-
-            const size_t byteLen = el->getLength();          // longueur en octets
-            if (byteLen < sliceCount)
-                throw std::runtime_error("Taille PixelData 8b incoh�rente: " + slices[z].path);
-
-            if (isSigned) { // int8_t
-                const int8_t* s8 = reinterpret_cast<const int8_t*>(p8);
-                for (size_t i = 0; i < sliceCount; ++i)
-                    dst[i] = float(double(s8[i]) * slope + intercept);
-            }
-            else {        // uint8_t
-                for (size_t i = 0; i < sliceCount; ++i)
-                    dst[i] = float(double(p8[i]) * slope + intercept);
-            }
-        }
-        else {
-            // ---- 16 bits ----
-            Uint16* p16 = nullptr;                           // <-- SANS const
-            if (el->getUint16Array(p16).bad() || !p16)
-                throw std::runtime_error("Pixels 16b indisponibles (codec?): " + slices[z].path);
-
-            const size_t numVals = el->getLength() / sizeof(Uint16);
-            if (numVals < sliceCount)
-                throw std::runtime_error("Taille PixelData 16b incoh�rente: " + slices[z].path);
-
-            if (isSigned) { // int16_t
-                const int16_t* s16 = reinterpret_cast<const int16_t*>(p16);
-                for (size_t i = 0; i < sliceCount; ++i)
-                    dst[i] = float(double(s16[i]) * slope + intercept);
-            }
-            else {        // uint16_t
-                for (size_t i = 0; i < sliceCount; ++i)
-                    dst[i] = float(double(p16[i]) * slope + intercept);
-            }
-        }
-    }
-
-
-    return vol;
+    return volume;
 }

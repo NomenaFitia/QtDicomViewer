@@ -16,12 +16,12 @@ add_executable(DicomViewerTests
 target_link_libraries(DicomViewerTests
     PRIVATE
     gtest_main
-    DicomCore   # ✅ on teste la vraie librairie
+    DicomCore
 )
 
 include(GoogleTest)
 gtest_discover_tests(DicomViewerTests)
 
-# Copier test_data dans le build
+# Copier test_data qui contient les dicom tests dans le build
 file(COPY ${CMAKE_SOURCE_DIR}/test/test_data
-    DESTINATION ${CMAKE_BINARY_DIR})
+    DESTINATION ${CMAKE_BINARY_DIR}/test)

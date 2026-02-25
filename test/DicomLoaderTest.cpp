@@ -36,6 +36,7 @@ TEST_F(DicomLoaderTest, LoadInvalidDirectory_ShouldThrow)
     }, std::exception);
 }
 
+
 TEST_F(DicomLoaderTest, LoadEmptyDirectory_ShouldThrow)
 {
     std::string emptyDir = "test_data/empty";
@@ -62,3 +63,4 @@ TEST_F(DicomLoaderTest, DirectionMatrix_ShouldBeNormalized)
     EXPECT_NEAR(rowNorm, 1.0f, 1e-3f);
     EXPECT_NEAR(colNorm, 1.0f, 1e-3f);
 }
+
