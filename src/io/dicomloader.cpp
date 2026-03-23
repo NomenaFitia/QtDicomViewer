@@ -296,7 +296,7 @@ HUVolume DICOMLoader::loadFromDirectory(const std::string& directoryPath)
     volume.voxels.resize((size_t)volumeWidth * volumeHeight * volumeDepth);
 
     // --------------------------------------------------------
-    // 5) Lecture PixelData
+    // 5) Lecture PixelData + HU conversion
     // --------------------------------------------------------
 
     const size_t pixelsPerSlice = (size_t)volumeWidth * volumeHeight;

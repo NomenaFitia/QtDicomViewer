@@ -11,6 +11,7 @@ FetchContent_MakeAvailable(googletest)
 add_executable(DicomViewerTests
     test.cpp
     DicomLoaderTest.cpp
+    SegmentationTest.cpp
 )
 
 target_link_libraries(DicomViewerTests
@@ -18,6 +19,7 @@ target_link_libraries(DicomViewerTests
     gtest_main
     DicomCore
 )
+
 
 include(GoogleTest)
 gtest_discover_tests(DicomViewerTests)

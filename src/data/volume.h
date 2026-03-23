@@ -22,7 +22,7 @@ struct HUVolume
 {
     uint32_t width = 0, height = 0, depth = 0;     // Columns, Rows, #slices
     glm::vec3 spacing{ 1,1,1 };                        // mm : x=col, y=row, z=slice gap
-    glm::vec3 origin{ 0,0,0 };                         // IPP du 1er slice tri�
+    glm::vec3 origin{ 0,0,0 };                         // IPP du 1er slice trié
     float direction[9] = { 1,0,0, 0,1,0, 0,0,1 };   // (row, col, normal)
 
     // Voxels : Hounsfield Units directement

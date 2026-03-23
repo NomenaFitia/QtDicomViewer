@@ -1,7 +1,17 @@
 #ifndef DICOMLOADER_H
 #define DICOMLOADER_H
 
-// Documentation TODO
+/**
+ *
+ * @brief Charge des fichiers DICOM depuis un répertoire
+ *
+ * @param directoryPath Chemin des fichiers DICOM
+ * @return un HUVolume
+ *
+ * @note Charge une série unique, les autres series sont ignorées, spacing.x,y depuis PixelSpacing; spacing.z = mediane des gaps; direction = [row; col; normal]; calcul des HU directement dans la fonction
+ * @todo décomposer pour appliquer le single responsability principle (SRP)
+ *
+ * */
 
 #include "../data/volume.h"
 #include <string>
@@ -9,11 +19,6 @@
 class DICOMLoader
 {
 public:
-    // Charge une serie DICOM depuis un dossier (une serie unique ; les autres series sont ignor�es)
-    // - Tri des slices par projection IPP sur la normale issue de IOP
-    // - spacing.x,y depuis PixelSpacing ; spacing.z = mediane des gaps
-    // - direction = [row; col; normal]
-    // - voxels : valeurs brutes en uint16 (getOutputData(16) de DicomImage)
     static HUVolume loadFromDirectory(const std::string& directoryPath);
 };
 #endif // DICOMLOADER_H

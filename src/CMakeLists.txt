@@ -14,6 +14,7 @@ set(CMAKE_AUTOUIC_SEARCH_PATHS
 add_library(DicomCore
     io/dicomloader.cpp
     data/slice.cpp
+    core/segmentation.cpp
 )
 
 target_include_directories(DicomCore PUBLIC
@@ -24,8 +25,19 @@ target_include_directories(DicomCore PUBLIC
 )
 
 target_link_libraries(DicomCore PUBLIC
+    # ne jamais link globalement DCMTK
     ${DCMTK_LIBRARIES}
+
+    # sinon on a un problème avec ceux là par contre - avec un erreur "ne peut pas trouver -lnsl : Aucun fichier ou dossier de ce nom
+    #DCMTK::dcmdata
+    #DCMTK::dcmimage
+    #DCMTK::dcmimgle
+
     glm::glm
+
+    Qt6::Widgets
+    Qt6::OpenGL
+    Qt6::OpenGLWidgets
 
 )
 
@@ -46,5 +58,3 @@ target_link_libraries(DicomViewer PRIVATE
     Qt${QT_VERSION_MAJOR}::OpenGLWidgets
     DicomCore
 )
-
-qt_finalize_executable(DicomViewer)

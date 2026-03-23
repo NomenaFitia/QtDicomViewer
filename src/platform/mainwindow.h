@@ -1,16 +1,18 @@
 /**
  *
- * @brief Classe principale de la fenêtre
+ * @brief Classe principale de la fenêtre TODO
+ *
  */
 
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include <qopenglwidget.h>
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
-class MainWindow;
+    class MainWindow;
 }
 QT_END_NAMESPACE
 
@@ -24,5 +26,11 @@ public:
 
 private:
     Ui::MainWindow *ui;
+
+    QOpenGLWidget* glWidget;
+
+    void createMenus();
+    void createToolBar();
+    void createDock();
 };
 #endif // MAINWINDOW_H
